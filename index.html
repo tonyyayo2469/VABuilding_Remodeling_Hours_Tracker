@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weekly Work Log</title>
+  <style>
+    :root {
+      --bg: #121212;
+      --card-bg: #1e1e1e;
+      --primary: #ffffff;
+      --accent: #3b82f6;
+      --border: #333333;
+      --text: #e0e0e0;
+      --muted: #a0a0a0;
+      --input-bg: #2a2a2a;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 12px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 600px;
+    }
+
+    header {
+      background: var(--card-bg);
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border);
+    }
+
+    h1 {
+      margin: 0 0 12px 0;
+      font-size: 1.3rem;
+      color: var(--primary);
+    }
+
+    .week-picker {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-weight: 600;
+    }
+
+    input[type="date"], input[type="text"], input[type="time"] {
+      padding: 10px;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 1rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .day-card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+      border: 1px solid var(--border);
+    }
+
+    .day-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+
+    .day-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .day-date {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .entry-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #252525;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      position: relative;
+    }
+
+    .row-inputs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .hours-display {
+      font-weight: 700;
+      text-align: right;
+      color: var(--accent);
+      font-size: 1.05rem;
+    }
+
+    .delete-btn {
+      position: absolute;
+      top: 6px;
+      right: 10px;
+      background: none;
+      border: none;
+      color: #ef4444;
+      font-size: 1.4rem;
+      cursor: pointer;
+    }
+
+    .add-btn {
+      background: #1e3a8a;
+      color: #93c5fd;
+      border: 1px dashed var(--accent);
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9rem;
+      width: 100%;
+    }
+
+    .day-total {
+      text-align: right;
+      font-weight: 700;
+      margin-top: 10px;
+      color: var(--primary);
+    }
+
+    .weekly-summary {
+      background: var(--card-bg);
+      color: var(--primary);
+      padding: 16px;
+      border-radius: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1.1rem;
+      font-weight: 700;
+      border: 2px solid var(--accent);
+      margin-top: 16px;
+      margin-bottom: 30px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>Work Hours Tracker</h1>
+    <div class="week-picker">
+      <label for="startDate">Week Starting Thursday:</label>
+      <input type="date" id="startDate">
+    </div>
+  </header>
+
+  <div id="daysContainer"></div>
+
+  <div class="weekly-summary">
+    <span>Total Hours for Week:</span>
+    <span id="grandTotal">0.00</span>
+  </div>
+</div>
+
+<script>
+  const daysOfWeek = ["Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday"];
+
+  function getThursdayString() {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day < 4 ? -3 : 4);
+    const thu = new Date(d.setDate(diff));
+    
+    const year = thu.getFullYear();
+    const month = String(thu.getMonth() + 1).padStart(2, '0');
+    const date = String(thu.getDate()).padStart(2, '0');
+    return `${year}-${month}-${date}`;
+  }
+
+  function initWeek() {
+    let startDateInput = document.getElementById('startDate').value;
+    
+    if (!startDateInput) {
+      startDateInput = getThursdayString();
+      document.getElementById('startDate').value = startDateInput;
+    }
+
+    const parts = startDateInput.split('-');
+    const baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    const container = document.getElementById('daysContainer');
+    
+    let savedData = {};
+    try {
+      const storageKey = `work_log_${startDateInput}`;
+      savedData = JSON.parse(localStorage.getItem(storageKey)) || {};
+    } catch (e) {
+      console.warn("LocalStorage unavailable, operating in memory.");
+    }
+
+    container.innerHTML = '';
+
+    daysOfWeek.forEach((dayName, index) => {
+      const currentDate = new Date(baseDate);
+      currentDate.setDate(baseDate.getDate() + index);
+      const dateStr = currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+      const dayCard = document.createElement('div');
+      dayCard.className = 'day-card';
+
+      dayCard.innerHTML = `
+        <div class="day-header">
+          <span class="day-name">${dayName} <span class="day-date">(${dateStr})</span></span>
+          <span class="day-total">Total: <span id="total-${index}">0.00</span> hrs</span>
+        </div>
+        <div class="entries-list" id="entries-${index}"></div>
+        <button class="add-btn" type="button" onclick="addEntry(${index})">+ Add Job</button>
+      `;
+
+      container.appendChild(dayCard);
+
+      const dayEntries = savedData[index] || [ { job: '', start: '', end: '' } ];
+      dayEntries.forEach(entry => addEntry(index, entry.job, entry.start, entry.end));
+    });
+
+    calculateTotals();
+  }
+
+  function addEntry(dayIndex, job = '', start = '', end = '') {
+    const list = document.getElementById(`entries-${dayIndex}`);
+    const row = document.createElement('div');
+    row.className = 'entry-row';
+
+    row.innerHTML = `
+      <button class="delete-btn" type="button" onclick="removeEntry(this)">&times;</button>
+      <input type="text" placeholder="Job Name" value="${job}" oninput="calculateTotals()">
+      <div class="row-inputs">
+        <div>
+          <label style="font-size:0.75rem; color:var(--muted)">Start</label>
+          <input type="time" value="${start}" onchange="calculateTotals()">
+        </div>
+        <div>
+          <label style="font-size:0.75rem; color:var(--muted)">End</label>
+          <input type="time" value="${end}" onchange="calculateTotals()">
+        </div>
+      </div>
+      <div class="hours-display">0.00 hrs</div>
+    `;
+
+    list.appendChild(row);
+    calculateTotals();
+  }
+
+  function removeEntry(btn) {
+    const row = btn.closest('.entry-row');
+    const list = row.parentElement;
+    if (list.children.length > 1) {
+      row.remove();
+    } else {
+      row.querySelectorAll('input').forEach(i => i.value = '');
+    }
+    calculateTotals();
+  }
+
+  function calculateRowHours(startStr, endStr) {
+    if (!startStr || !endStr) return 0;
+    const [h1, m1] = startStr.split(':').map(Number);
+    const [h2, m2] = endStr.split(':').map(Number);
+
+    let startMin = h1 * 60 + m1;
+    let endMin = h2 * 60 + m2;
+
+    if (endMin < startMin) endMin += 24 * 60;
+
+    return (endMin - startMin) / 60;
+  }
+
+  function calculateTotals() {
+    const startDateInput = document.getElementById('startDate').value;
+    const storageKey = `work_log_${startDateInput}`;
+    const weekData = {};
+    let grandTotal = 0;
+
+    daysOfWeek.forEach((_, index) => {
+      const list = document.getElementById(`entries-${index}`);
+      if (!list) return;
+
+      const rows = list.querySelectorAll('.entry-row');
+      let dayTotal = 0;
+      weekData[index] = [];
+
+      rows.forEach(row => {
+        const textInput = row.querySelector('input[type="text"]');
+        const timeInputs = row.querySelectorAll('input[type="time"]');
+        
+        const job = textInput ? textInput.value : '';
+        const start = timeInputs[0] ? timeInputs[0].value : '';
+        const end = timeInputs[1] ? timeInputs[1].value : '';
+
+        const hours = calculateRowHours(start, end);
+        const display = row.querySelector('.hours-display');
+        if (display) display.textContent = hours.toFixed(2) + ' hrs';
+
+        dayTotal += hours;
+        weekData[index].push({ job, start, end });
+      });
+
+      const dayTotalElem = document.getElementById(`total-${index}`);
+      if (dayTotalElem) dayTotalElem.textContent = dayTotal.toFixed(2);
+
+      grandTotal += dayTotal;
+    });
+
+    const grandTotalElem = document.getElementById('grandTotal');
+    if (grandTotalElem) grandTotalElem.textContent = grandTotal.toFixed(2);
+
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(weekData));
+    } catch (e) {
+      // Ignore storage errors on restricted local schemes
+    }
+  }
+
+  document.getElementById('startDate').addEventListener('change', initWeek);
+  window.addEventListener('DOMContentLoaded', initWeek);
+  initWeek();
+</script>
+
+</body>
+</html>
