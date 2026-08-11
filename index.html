@@ -157,7 +157,63 @@
       font-weight: 700;
       border: 2px solid var(--accent);
       margin-top: 16px;
+      margin-bottom: 16px;
+    }
+
+    .action-btn {
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 1rem;
+      width: 100%;
+      cursor: pointer;
       margin-bottom: 30px;
+    }
+
+    /* Print / PDF Specific Styling */
+    #printSection {
+      display: none;
+    }
+
+    @media print {
+      body {
+        background: #ffffff !important;
+        color: #000000 !important;
+        padding: 0;
+      }
+      .container, header, .day-card, .weekly-summary, .action-btn {
+        display: none !important;
+      }
+      #printSection {
+        display: block !important;
+        width: 100%;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+      }
+      th, td {
+        border: 1px solid #000;
+        padding: 8px;
+        text-align: left;
+        font-size: 12px;
+      }
+      th {
+        background-color: #f2f2f2;
+      }
+      .text-right {
+        text-align: right;
+      }
+      .font-bold {
+        font-weight: bold;
+      }
+      .day-row-header {
+        background-color: #e6e6e6;
+      }
     }
   </style>
 </head>
@@ -178,7 +234,12 @@
     <span>Total Hours for Week:</span>
     <span id="grandTotal">0.00</span>
   </div>
+
+  <button class="action-btn" type="button" onclick="generateReport()">📄 Export / Print Payroll Report</button>
 </div>
+
+<!-- Hidden printable grid section -->
+<div id="printSection"></div>
 
 <script>
   const daysOfWeek = ["Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday"];
@@ -212,7 +273,7 @@
       const storageKey = `work_log_${startDateInput}`;
       savedData = JSON.parse(localStorage.getItem(storageKey)) || {};
     } catch (e) {
-      console.warn("LocalStorage unavailable, operating in memory.");
+      console.warn("LocalStorage unavailable.");
     }
 
     container.innerHTML = '';
@@ -292,6 +353,15 @@
     return (endMin - startMin) / 60;
   }
 
+  function formatTime12(timeStr) {
+    if (!timeStr) return '';
+    const [h, m] = timeStr.split(':').map(Number);
+    const suffix = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h % 12 || 12;
+    const minStr = String(m).padStart(2, '0');
+    return `${hour12}:${minStr} ${suffix}`;
+  }
+
   function calculateTotals() {
     const startDateInput = document.getElementById('startDate').value;
     const storageKey = `work_log_${startDateInput}`;
@@ -334,8 +404,105 @@
     try {
       localStorage.setItem(storageKey, JSON.stringify(weekData));
     } catch (e) {
-      // Ignore storage errors on restricted local schemes
+      // Memory fallback
     }
+  }
+
+  function generateReport() {
+    const startDateInput = document.getElementById('startDate').value;
+    const parts = startDateInput.split('-');
+    const baseDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    const endDate = new Date(baseDate);
+    endDate.setDate(baseDate.getDate() + 6);
+
+    const startFormatted = baseDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const endFormatted = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    let tableHTML = `
+      <h2 style="margin:0;">Weekly Work Log Report</h2>
+      <p style="margin: 4px 0 16px 0;"><strong>Pay Period:</strong> ${startFormatted} – ${endFormatted}</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Day / Date</th>
+            <th>Job Name</th>
+            <th>Start Time</th>
+            <th>End Time</th>
+            <th class="text-right">Hours</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    let grandTotal = 0;
+
+    daysOfWeek.forEach((dayName, index) => {
+      const currentDate = new Date(baseDate);
+      currentDate.setDate(baseDate.getDate() + index);
+      const dateStr = currentDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+      const list = document.getElementById(`entries-${index}`);
+      const rows = list ? list.querySelectorAll('.entry-row') : [];
+      let dayTotal = 0;
+      let validEntries = 0;
+
+      rows.forEach(row => {
+        const textInput = row.querySelector('input[type="text"]');
+        const timeInputs = row.querySelectorAll('input[type="time"]');
+        const job = textInput ? textInput.value : '';
+        const start = timeInputs[0] ? timeInputs[0].value : '';
+        const end = timeInputs[1] ? timeInputs[1].value : '';
+
+        if (job || start || end) {
+          const hours = calculateRowHours(start, end);
+          dayTotal += hours;
+          validEntries++;
+
+          tableHTML += `
+            <tr>
+              <td>${dayName} (${dateStr})</td>
+              <td>${job || '—'}</td>
+              <td>${formatTime12(start) || '—'}</td>
+              <td>${formatTime12(end) || '—'}</td>
+              <td class="text-right">${hours.toFixed(2)}</td>
+            </tr>
+          `;
+        }
+      });
+
+      if (validEntries === 0) {
+        tableHTML += `
+          <tr>
+            <td>${dayName} (${dateStr})</td>
+            <td colspan="3" style="color: #777;">Off / No hours logged</td>
+            <td class="text-right">0.00</td>
+          </tr>
+        `;
+      } else {
+        tableHTML += `
+          <tr class="day-row-header">
+            <td colspan="4" class="font-bold">Total for ${dayName}</td>
+            <td class="text-right font-bold">${dayTotal.toFixed(2)}</td>
+          </tr>
+        `;
+      }
+
+      grandTotal += dayTotal;
+    });
+
+    tableHTML += `
+        </tbody>
+        <tfoot>
+          <tr style="background-color: #ddd;">
+            <td colspan="4" class="font-bold" style="font-size: 14px;">TOTAL HOURS FOR WEEK</td>
+            <td class="text-right font-bold" style="font-size: 14px;">${grandTotal.toFixed(2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    `;
+
+    document.getElementById('printSection').innerHTML = tableHTML;
+    window.print();
   }
 
   document.getElementById('startDate').addEventListener('change', initWeek);
@@ -345,3 +512,4 @@
 
 </body>
 </html>
+
