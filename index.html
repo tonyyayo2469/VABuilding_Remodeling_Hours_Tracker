@@ -52,7 +52,7 @@
       font-weight: 600;
     }
 
-    input[type="date"], input[type="text"], input[type="time"] {
+    input[type="date"], input[type="text"], input[type="time"], select {
       padding: 10px;
       background: var(--input-bg);
       border: 1px solid var(--border);
@@ -136,13 +136,38 @@
       font-weight: 600;
       font-size: 0.9rem;
       width: 100%;
+      margin-bottom: 12px;
+    }
+
+    .lunch-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #181818;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      margin-bottom: 10px;
+    }
+
+    .lunch-row label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .lunch-row select {
+      width: auto;
+      padding: 6px 10px;
+      font-size: 0.85rem;
     }
 
     .day-total {
       text-align: right;
       font-weight: 700;
-      margin-top: 10px;
+      margin-top: 6px;
       color: var(--primary);
+      font-size: 1.05rem;
     }
 
     .weekly-summary {
@@ -286,18 +311,30 @@
       const dayCard = document.createElement('div');
       dayCard.className = 'day-card';
 
+      const savedLunch = savedData[index] ? (savedData[index].lunch || "0") : "0";
+
       dayCard.innerHTML = `
         <div class="day-header">
           <span class="day-name">${dayName} <span class="day-date">(${dateStr})</span></span>
-          <span class="day-total">Total: <span id="total-${index}">0.00</span> hrs</span>
         </div>
         <div class="entries-list" id="entries-${index}"></div>
         <button class="add-btn" type="button" onclick="addEntry(${index})">+ Add Job</button>
+        <div class="lunch-row">
+          <label for="lunch-${index}">Unpaid Lunch Break:</label>
+          <select id="lunch-${index}" onchange="calculateTotals()">
+            <option value="0" ${savedLunch === "0" ? "selected" : ""}>None</option>
+            <option value="0.25" ${savedLunch === "0.25" ? "selected" : ""}>15 mins</option>
+            <option value="0.5" ${savedLunch === "0.5" ? "selected" : ""}>30 mins</option>
+            <option value="0.75" ${savedLunch === "0.75" ? "selected" : ""}>45 mins</option>
+            <option value="1.0" ${savedLunch === "1.0" ? "selected" : ""}>1 hour</option>
+          </select>
+        </div>
+        <div class="day-total">Total for Day: <span id="total-${index}">0.00</span> hrs</div>
       `;
 
       container.appendChild(dayCard);
 
-      const dayEntries = savedData[index] || [ { job: '', start: '', end: '' } ];
+      const dayEntries = (savedData[index] && savedData[index].entries) ? savedData[index].entries : [ { job: '', start: '', end: '' } ];
       dayEntries.forEach(entry => addEntry(index, entry.job, entry.start, entry.end));
     });
 
@@ -373,8 +410,8 @@
       if (!list) return;
 
       const rows = list.querySelectorAll('.entry-row');
-      let dayTotal = 0;
-      weekData[index] = [];
+      let grossDayTotal = 0;
+      const entries = [];
 
       rows.forEach(row => {
         const textInput = row.querySelector('input[type="text"]');
@@ -388,14 +425,25 @@
         const display = row.querySelector('.hours-display');
         if (display) display.textContent = hours.toFixed(2) + ' hrs';
 
-        dayTotal += hours;
-        weekData[index].push({ job, start, end });
+        grossDayTotal += hours;
+        entries.push({ job, start, end });
       });
 
-      const dayTotalElem = document.getElementById(`total-${index}`);
-      if (dayTotalElem) dayTotalElem.textContent = dayTotal.toFixed(2);
+      const lunchSelect = document.getElementById(`lunch-${index}`);
+      const lunchHours = lunchSelect ? parseFloat(lunchSelect.value) || 0 : 0;
+      
+      // Subtract lunch break from daily total, but don't drop below 0
+      const netDayTotal = Math.max(0, grossDayTotal - lunchHours);
 
-      grandTotal += dayTotal;
+      const dayTotalElem = document.getElementById(`total-${index}`);
+      if (dayTotalElem) dayTotalElem.textContent = netDayTotal.toFixed(2);
+
+      grandTotal += netDayTotal;
+
+      weekData[index] = {
+        lunch: lunchSelect ? lunchSelect.value : "0",
+        entries: entries
+      };
     });
 
     const grandTotalElem = document.getElementById('grandTotal');
@@ -443,7 +491,7 @@
 
       const list = document.getElementById(`entries-${index}`);
       const rows = list ? list.querySelectorAll('.entry-row') : [];
-      let dayTotal = 0;
+      let grossDayTotal = 0;
       let validEntries = 0;
 
       rows.forEach(row => {
@@ -455,7 +503,7 @@
 
         if (job || start || end) {
           const hours = calculateRowHours(start, end);
-          dayTotal += hours;
+          grossDayTotal += hours;
           validEntries++;
 
           tableHTML += `
@@ -470,6 +518,10 @@
         }
       });
 
+      const lunchSelect = document.getElementById(`lunch-${index}`);
+      const lunchHours = lunchSelect ? parseFloat(lunchSelect.value) || 0 : 0;
+      const netDayTotal = Math.max(0, grossDayTotal - lunchHours);
+
       if (validEntries === 0) {
         tableHTML += `
           <tr>
@@ -479,15 +531,26 @@
           </tr>
         `;
       } else {
+        if (lunchHours > 0) {
+          const lunchMins = lunchHours * 60;
+          tableHTML += `
+            <tr style="font-style: italic; color: #555;">
+              <td>${dayName} (${dateStr})</td>
+              <td colspan="3">Less Unpaid Lunch Break (-${lunchMins} mins)</td>
+              <td class="text-right">-${lunchHours.toFixed(2)}</td>
+            </tr>
+          `;
+        }
+
         tableHTML += `
           <tr class="day-row-header">
             <td colspan="4" class="font-bold">Total for ${dayName}</td>
-            <td class="text-right font-bold">${dayTotal.toFixed(2)}</td>
+            <td class="text-right font-bold">${netDayTotal.toFixed(2)}</td>
           </tr>
         `;
       }
 
-      grandTotal += dayTotal;
+      grandTotal += netDayTotal;
     });
 
     tableHTML += `
@@ -512,4 +575,3 @@
 
 </body>
 </html>
-
